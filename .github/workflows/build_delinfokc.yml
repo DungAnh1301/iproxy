@@ -9,6 +9,7 @@ jobs:
       - name: Compile DelInfoKC with Xcode iOS SDK
         run: |
           xcrun -sdk iphoneos clang -arch arm64 -miphoneos-version-min=14.0 -fobjc-arc -O2 -framework Foundation -framework Security -o DelInfoKC DelInfoKC.m
+          codesign -f -s - DelInfoKC
           file DelInfoKC
           otool -L DelInfoKC
       - uses: actions/upload-artifact@v4
