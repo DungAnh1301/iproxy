@@ -22,14 +22,16 @@
 	<true/>
 	<key>keychain-access-groups</key>
 	<array>
-		<string>*</string>
 		<string>858FPG75R9.*</string>
+		<string>858FPG75R9.com.zhiliaoapp.musically</string>
+		<string>858FPG75R9.com.ss.iphone.ugc.Ame</string>
 		<string>MJ797D8U6F.*</string>
 		<string>MJ797D8U6F.com.ss.iphone.ugc.Ame</string>
 		<string>MJ797D8U6F.com.zhiliaoapp.shared</string>
 		<string>MJ797D8U6F.com.chainlogin</string>
 		<string>MJ797D8U6F.com.chainassociate</string>
 		<string>TQ62GSZBBR.*</string>
+		<string>TQ62GSZBBR.com.zhiliaoapp.musically</string>
 		<string>com.zhiliaoapp.musically</string>
 		<string>com.ss.iphone.ugc.Ame</string>
 		<string>group.com.ss.iphone.ugc.Ame.TikTok.Bytemod</string>
