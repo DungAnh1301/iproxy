@@ -120,11 +120,12 @@ static int cmdClean(NSString *appsCsv) {
 
 static int cmdDump(NSString *appsCsv, NSString *outPath) {
     NSArray<NSString *> *pats = buildPatterns(appsCsv);
+    NSMutableArray *genpItems = [NSMutableArray array];
+    NSMutableArray *inetItems = [NSMutableArray array];
     NSArray *classes = @[
         (__bridge id)kSecClassGenericPassword,
         (__bridge id)kSecClassInternetPassword
     ];
-    NSMutableArray *outItems = [NSMutableArray array];
 
     for (id secClass in classes) {
         NSDictionary *q = @{
@@ -144,7 +145,6 @@ static int cmdDump(NSString *appsCsv, NSString *outPath) {
                     if (![item isKindOfClass:[NSDictionary class]]) continue;
                     if (!itemMatchesPatterns(item, pats)) continue;
                     NSMutableDictionary *d = [NSMutableDictionary dictionary];
-                    d[@"class"] = secClass;
                     for (NSString *k in @[@"agrp", @"svce", @"acct", @"v_Data", @"pdmn", @"sync", @"tomb", @"cdat", @"mdat", @"sha1", @"musr", @"gena", @"desc", @"icmt", @"type", @"crtr"]) {
                         id val = item[k];
                         if (val) d[k] = val;
@@ -159,20 +159,68 @@ static int cmdDump(NSString *appsCsv, NSString *outPath) {
                             }
                         }
                     }
-                    [outItems addObject:d];
+                    if ([secClass isEqual:(__bridge id)kSecClassInternetPassword]) {
+                        [inetItems addObject:d];
+                    } else {
+                        [genpItems addObject:d];
+                    }
                 }
             }
         }
     }
 
+    NSDictionary *root = @{
+        @"cert": @[],
+        @"genp": genpItems,
+        @"inet": inetItems,
+        @"keys": @[]
+    };
     NSError *err = nil;
-    NSData *plistData = [NSPropertyListSerialization dataWithPropertyList:outItems format:NSPropertyListBinaryFormat_v1_0 options:0 error:&err];
+    NSData *plistData = [NSPropertyListSerialization dataWithPropertyList:root format:NSPropertyListXMLFormat_v1_0 options:0 error:&err];
     if (!plistData || ![plistData writeToFile:outPath atomically:YES]) {
         printf("{\"status\":\"error\",\"message\":\"write dump failed\"}\n");
         return 1;
     }
-    printf("{\"status\":\"success\",\"count\":%lu}\n", (unsigned long)outItems.count);
+    printf("{\"status\":\"success\",\"count\":%lu,\"genp\":%lu,\"inet\":%lu}\n",
+           (unsigned long)(genpItems.count + inetItems.count),
+           (unsigned long)genpItems.count,
+           (unsigned long)inetItems.count);
     return 0;
+}
+
+static int addItemsForClass(NSArray *items, id secClass) {
+    int added = 0;
+    NSArray *copyKeys = @[@"acct", @"agrp", @"gena", @"musr", @"pdmn", @"svce", @"sync", @"v_Data", @"tomb", @"desc", @"icmt", @"type", @"crtr"];
+    for (NSDictionary *orig in items) {
+        if (![orig isKindOfClass:[NSDictionary class]]) continue;
+        NSMutableDictionary *d = [NSMutableDictionary dictionary];
+        d[(__bridge id)kSecClass] = orig[@"class"] ?: secClass;
+        for (NSString *k in copyKeys) {
+            if (orig[k]) d[k] = orig[k];
+        }
+        NSData *acData = orig[@"accc"];
+        if ([acData isKindOfClass:[NSData class]]) {
+            SecACCreateFromDataFn fnCreate = (SecACCreateFromDataFn)dlsym(RTLD_DEFAULT, "SecAccessControlCreateFromData");
+            if (fnCreate) {
+                CFErrorRef cfErr = NULL;
+                SecAccessControlRef ac = fnCreate(kCFAllocatorDefault, (__bridge CFDataRef)acData, &cfErr);
+                if (ac) {
+                    d[(__bridge id)kSecAttrAccessControl] = CFBridgingRelease(ac);
+                }
+                if (cfErr) CFRelease(cfErr);
+            }
+        }
+        NSMutableDictionary *delQ = [NSMutableDictionary dictionary];
+        delQ[(__bridge id)kSecClass] = d[(__bridge id)kSecClass];
+        if (d[@"agrp"]) delQ[@"agrp"] = d[@"agrp"];
+        if (d[@"svce"]) delQ[@"svce"] = d[@"svce"];
+        if (d[@"acct"]) delQ[@"acct"] = d[@"acct"];
+        SecItemDelete((__bridge CFDictionaryRef)delQ);
+        if (SecItemAdd((__bridge CFDictionaryRef)d, NULL) == errSecSuccess) {
+            added++;
+        }
+    }
+    return added;
 }
 
 static int cmdRestore(NSString *inPath) {
@@ -181,40 +229,21 @@ static int cmdRestore(NSString *inPath) {
         printf("{\"status\":\"error\",\"message\":\"read restore file failed\"}\n");
         return 1;
     }
-    NSArray *items = [NSPropertyListSerialization propertyListWithData:raw options:NSPropertyListImmutable format:NULL error:nil];
-    if (![items isKindOfClass:[NSArray class]]) {
+    id plist = [NSPropertyListSerialization propertyListWithData:raw options:NSPropertyListImmutable format:NULL error:nil];
+    int added = 0;
+    if ([plist isKindOfClass:[NSDictionary class]]) {
+        NSDictionary *root = (NSDictionary *)plist;
+        if ([root[@"genp"] isKindOfClass:[NSArray class]]) {
+            added += addItemsForClass(root[@"genp"], (__bridge id)kSecClassGenericPassword);
+        }
+        if ([root[@"inet"] isKindOfClass:[NSArray class]]) {
+            added += addItemsForClass(root[@"inet"], (__bridge id)kSecClassInternetPassword);
+        }
+    } else if ([plist isKindOfClass:[NSArray class]]) {
+        added += addItemsForClass((NSArray *)plist, (__bridge id)kSecClassGenericPassword);
+    } else {
         printf("{\"status\":\"error\",\"message\":\"invalid plist\"}\n");
         return 1;
-    }
-    int added = 0;
-    for (NSDictionary *orig in items) {
-        if (![orig isKindOfClass:[NSDictionary class]]) continue;
-        NSMutableDictionary *d = [orig mutableCopy];
-        NSData *acData = d[@"accc"];
-        if ([acData isKindOfClass:[NSData class]]) {
-            SecACCreateFromDataFn fnCreate = (SecACCreateFromDataFn)dlsym(RTLD_DEFAULT, "SecAccessControlCreateFromData");
-            if (fnCreate) {
-                CFErrorRef cfErr = NULL;
-                SecAccessControlRef ac = fnCreate(kCFAllocatorDefault, (__bridge CFDataRef)acData, &cfErr);
-                if (ac) {
-                    d[(__bridge id)kSecAttrAccessControl] = CFBridgingRelease(ac);
-                } else {
-                    [d removeObjectForKey:@"accc"];
-                }
-                if (cfErr) CFRelease(cfErr);
-            } else {
-                [d removeObjectForKey:@"accc"];
-            }
-        }
-        NSMutableDictionary *delQ = [NSMutableDictionary dictionary];
-        if (d[@"class"]) delQ[@"class"] = d[@"class"];
-        if (d[@"agrp"]) delQ[@"agrp"] = d[@"agrp"];
-        if (d[@"svce"]) delQ[@"svce"] = d[@"svce"];
-        if (d[@"acct"]) delQ[@"acct"] = d[@"acct"];
-        SecItemDelete((__bridge CFDictionaryRef)delQ);
-        if (SecItemAdd((__bridge CFDictionaryRef)d, NULL) == errSecSuccess) {
-            added++;
-        }
     }
     printf("{\"status\":\"success\",\"added\":%d}\n", added);
     return 0;
