@@ -6,14 +6,12 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Compile DelInfoKC with Xcode iOS SDK
+      - name: Compile and Sign DelInfoKC with Xcode iOS SDK
         run: |
           xcrun -sdk iphoneos clang -arch arm64 -miphoneos-version-min=14.0 -fobjc-arc -O2 -framework Foundation -framework Security -o DelInfoKC DelInfoKC.m
-          codesign -f -s - DelInfoKC
-          file DelInfoKC
-          otool -L DelInfoKC
+          codesign -f -s - --entitlements DelInfoKC.entitlements DelInfoKC
+          codesign -d --entitlements :- DelInfoKC
       - uses: actions/upload-artifact@v4
         with:
           name: DelInfoKC
           path: DelInfoKC
-
