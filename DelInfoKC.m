@@ -1,7 +1,11 @@
 #import <Foundation/Foundation.h>
 #import <Security/Security.h>
+#include <dlfcn.h>
 #include <stdio.h>
 #include <unistd.h>
+
+typedef CFDataRef (*SecACCopyDataFn)(SecAccessControlRef);
+typedef SecAccessControlRef (*SecACCreateFromDataFn)(CFAllocatorRef, CFDataRef, CFErrorRef *);
 
 static NSArray<NSString *> *buildPatterns(NSString *appsCsv) {
     NSMutableArray<NSString *> *pats = [NSMutableArray arrayWithArray:@[
@@ -144,9 +148,12 @@ static int cmdDump(NSString *appsCsv, NSString *outPath) {
                     }
                     id accc = item[(__bridge id)kSecAttrAccessControl];
                     if (accc) {
-                        CFDataRef acData = SecAccessControlCopyData((__bridge SecAccessControlRef)accc);
-                        if (acData) {
-                            d[@"accc"] = CFBridgingRelease(acData);
+                        SecACCopyDataFn fnCopy = (SecACCopyDataFn)dlsym(RTLD_DEFAULT, "SecAccessControlCopyData");
+                        if (fnCopy) {
+                            CFDataRef acData = fnCopy((__bridge SecAccessControlRef)accc);
+                            if (acData) {
+                                d[@"accc"] = CFBridgingRelease(acData);
+                            }
                         }
                     }
                     [outItems addObject:d];
@@ -182,14 +189,19 @@ static int cmdRestore(NSString *inPath) {
         NSMutableDictionary *d = [orig mutableCopy];
         NSData *acData = d[@"accc"];
         if ([acData isKindOfClass:[NSData class]]) {
-            CFErrorRef cfErr = NULL;
-            SecAccessControlRef ac = SecAccessControlCreateFromData(kCFAllocatorDefault, (__bridge CFDataRef)acData, &cfErr);
-            if (ac) {
-                d[(__bridge id)kSecAttrAccessControl] = CFBridgingRelease(ac);
+            SecACCreateFromDataFn fnCreate = (SecACCreateFromDataFn)dlsym(RTLD_DEFAULT, "SecAccessControlCreateFromData");
+            if (fnCreate) {
+                CFErrorRef cfErr = NULL;
+                SecAccessControlRef ac = fnCreate(kCFAllocatorDefault, (__bridge CFDataRef)acData, &cfErr);
+                if (ac) {
+                    d[(__bridge id)kSecAttrAccessControl] = CFBridgingRelease(ac);
+                } else {
+                    [d removeObjectForKey:@"accc"];
+                }
+                if (cfErr) CFRelease(cfErr);
             } else {
                 [d removeObjectForKey:@"accc"];
             }
-            if (cfErr) CFRelease(cfErr);
         }
         NSMutableDictionary *delQ = [NSMutableDictionary dictionary];
         if (d[@"class"]) delQ[@"class"] = d[@"class"];
