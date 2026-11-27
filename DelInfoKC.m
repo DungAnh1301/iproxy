@@ -61,6 +61,8 @@ static int cmdClean(NSString *appsCsv) {
     int matched = 0;
     int secDeleted = 0;
     OSStatus lastErr = errSecSuccess;
+    OSStatus genpSt = -999;
+    OSStatus emptyDelSt = SecItemDelete((__bridge CFDictionaryRef)@{});
 
     for (id secClass in classes) {
         NSDictionary *q = @{
@@ -73,7 +75,10 @@ static int cmdClean(NSString *appsCsv) {
         };
         CFTypeRef res = NULL;
         OSStatus st = SecItemCopyMatching((__bridge CFDictionaryRef)q, &res);
-        if (st != errSecSuccess && st != errSecItemNotFound) {
+        if (secClass == (__bridge id)kSecClassGenericPassword) {
+            genpSt = st;
+        }
+        if (st != errSecSuccess) {
             lastErr = st;
         }
         if (st == errSecSuccess && res) {
@@ -110,8 +115,8 @@ static int cmdClean(NSString *appsCsv) {
         }
     }
 
-    printf("{\"status\":\"success\",\"uid\":%d,\"euid\":%d,\"sec_deleted\":%d,\"matched\":%d,\"copy_err\":%d,\"sql_deleted\":0}\n",
-           (int)getuid(), (int)geteuid(), secDeleted, matched, (int)lastErr);
+    printf("{\"status\":\"success\",\"uid\":%d,\"euid\":%d,\"sec_deleted\":%d,\"matched\":%d,\"copy_err\":%d,\"genp_st\":%d,\"empty_del_st\":%d,\"sql_deleted\":0}\n",
+           (int)getuid(), (int)geteuid(), secDeleted, matched, (int)lastErr, (int)genpSt, (int)emptyDelSt);
     return 0;
 }
 
