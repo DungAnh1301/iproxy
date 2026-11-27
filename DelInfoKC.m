@@ -91,8 +91,7 @@ static int cmdClean(NSString *appsCsv) {
                     NSData *pref = item[(__bridge id)kSecValuePersistentRef];
                     if (pref) {
                         NSDictionary *delQ = @{
-                            (__bridge id)kSecValuePersistentRef: pref,
-                            (__bridge id)kSecUseAuthenticationUI: (__bridge id)kSecUseAuthenticationUISkip
+                            (__bridge id)kSecValuePersistentRef: pref
                         };
                         OSStatus dst = SecItemDelete((__bridge CFDictionaryRef)delQ);
                         if (dst == errSecSuccess) {
@@ -106,7 +105,6 @@ static int cmdClean(NSString *appsCsv) {
                     if (item[(__bridge id)kSecAttrService]) fbQ[(__bridge id)kSecAttrService] = item[(__bridge id)kSecAttrService];
                     if (item[(__bridge id)kSecAttrAccount]) fbQ[(__bridge id)kSecAttrAccount] = item[(__bridge id)kSecAttrAccount];
                     fbQ[(__bridge id)kSecAttrSynchronizable] = (__bridge id)kSecAttrSynchronizableAny;
-                    fbQ[(__bridge id)kSecUseAuthenticationUI] = (__bridge id)kSecUseAuthenticationUISkip;
                     if (SecItemDelete((__bridge CFDictionaryRef)fbQ) == errSecSuccess) {
                         secDeleted++;
                     }
@@ -213,7 +211,6 @@ static int cmdRestore(NSString *inPath) {
         if (d[@"agrp"]) delQ[@"agrp"] = d[@"agrp"];
         if (d[@"svce"]) delQ[@"svce"] = d[@"svce"];
         if (d[@"acct"]) delQ[@"acct"] = d[@"acct"];
-        delQ[(__bridge id)kSecUseAuthenticationUI] = (__bridge id)kSecUseAuthenticationUISkip;
         SecItemDelete((__bridge CFDictionaryRef)delQ);
         if (SecItemAdd((__bridge CFDictionaryRef)d, NULL) == errSecSuccess) {
             added++;
